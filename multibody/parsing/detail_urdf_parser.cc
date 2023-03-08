@@ -18,18 +18,19 @@
 
 #include "drake/common/sorted_pair.h"
 #include "drake/math/rotation_matrix.h"
+#include "drake/multibody/parsing/detail_make_model_name.h"
 #include "drake/multibody/parsing/detail_path_utils.h"
 #include "drake/multibody/parsing/detail_tinyxml.h"
 #include "drake/multibody/parsing/detail_tinyxml2_diagnostic.h"
 #include "drake/multibody/parsing/detail_urdf_geometry.h"
 #include "drake/multibody/parsing/package_map.h"
-#include "drake/multibody/parsing/scoped_names.h"
 #include "drake/multibody/plant/multibody_plant.h"
 #include "drake/multibody/tree/ball_rpy_joint.h"
 #include "drake/multibody/tree/fixed_offset_frame.h"
 #include "drake/multibody/tree/planar_joint.h"
 #include "drake/multibody/tree/prismatic_joint.h"
 #include "drake/multibody/tree/revolute_joint.h"
+#include "drake/multibody/tree/scoped_name.h"
 #include "drake/multibody/tree/screw_joint.h"
 #include "drake/multibody/tree/universal_joint.h"
 #include "drake/multibody/tree/weld_joint.h"
@@ -463,7 +464,6 @@ void UrdfParser::ParseJoint(
     return;
   }
   WarnUnsupportedElement(*node, "calibration");
-  WarnUnsupportedElement(*node, "mimic");
   WarnUnsupportedElement(*node, "safety_controller");
 
   // Parses the parent and child link names.
@@ -533,30 +533,31 @@ void UrdfParser::ParseJoint(
   };
 
   auto plant = w_.plant;
+  std::optional<JointIndex> index{};
   if (type.compare("revolute") == 0 || type.compare("continuous") == 0) {
     throw_on_custom_joint(false);
     ParseJointLimits(node, &lower, &upper, &velocity, &acceleration, &effort);
     ParseJointDynamics(node, &damping);
-    const JointIndex index = plant->AddJoint<RevoluteJoint>(
+    index = plant->AddJoint<RevoluteJoint>(
         name, *parent_body, X_PJ,
         *child_body, std::nullopt, axis, lower, upper, damping).index();
-    Joint<double>& joint = plant->get_mutable_joint(index);
+    Joint<double>& joint = plant->get_mutable_joint(*index);
     joint.set_velocity_limits(Vector1d(-velocity), Vector1d(velocity));
     joint.set_acceleration_limits(
         Vector1d(-acceleration), Vector1d(acceleration));
   } else if (type.compare("fixed") == 0) {
     throw_on_custom_joint(false);
-    plant->AddJoint<WeldJoint>(name, *parent_body, X_PJ,
-                               *child_body, std::nullopt,
-                               RigidTransformd::Identity());
+    index = plant->AddJoint<WeldJoint>(
+        name, *parent_body, X_PJ, *child_body, std::nullopt,
+        RigidTransformd::Identity()).index();
   } else if (type.compare("prismatic") == 0) {
     throw_on_custom_joint(false);
     ParseJointLimits(node, &lower, &upper, &velocity, &acceleration, &effort);
     ParseJointDynamics(node, &damping);
-    const JointIndex index = plant->AddJoint<PrismaticJoint>(
-        name, *parent_body, X_PJ,
-        *child_body, std::nullopt, axis, lower, upper, damping).index();
-    Joint<double>& joint = plant->get_mutable_joint(index);
+    index = plant->AddJoint<PrismaticJoint>(
+        name, *parent_body, X_PJ, *child_body, std::nullopt, axis, lower,
+        upper, damping).index();
+    Joint<double>& joint = plant->get_mutable_joint(*index);
     joint.set_velocity_limits(Vector1d(-velocity), Vector1d(velocity));
     joint.set_acceleration_limits(
         Vector1d(-acceleration), Vector1d(acceleration));
@@ -568,30 +569,33 @@ void UrdfParser::ParseJoint(
   } else if (type.compare("ball") == 0) {
     throw_on_custom_joint(true);
     ParseJointDynamics(node, &damping);
-    plant->AddJoint<BallRpyJoint>(name, *parent_body, X_PJ,
-                                  *child_body, std::nullopt, damping);
+    index = plant->AddJoint<BallRpyJoint>(
+      name, *parent_body, X_PJ, *child_body, std::nullopt, damping).index();
   } else if (type.compare("planar") == 0) {
-    throw_on_custom_joint(true);
+    // Permit both the standard 'joint' and custom 'drake:joint' spellings
+    // here. The standard spelling was actually always correct, but Drake only
+    // supported the custom spelling for quite some time, and some model files
+    // are likely spelled that way. See #18730.
     Vector3d damping_vec(0, 0, 0);
     XMLElement* dynamics_node = node->FirstChildElement("dynamics");
     if (dynamics_node) {
       ParseVectorAttribute(dynamics_node, "damping", &damping_vec);
     }
-    plant->AddJoint<PlanarJoint>(name, *parent_body, X_PJ,
-                                 *child_body, std::nullopt, damping_vec);
+    index = plant->AddJoint<PlanarJoint>(
+      name, *parent_body, X_PJ, *child_body, std::nullopt, damping_vec).index();
   } else if (type.compare("screw") == 0) {
     throw_on_custom_joint(true);
     ParseJointDynamics(node, &damping);
     double screw_thread_pitch;
     ParseScrewJointThreadPitch(node, &screw_thread_pitch);
-    plant->AddJoint<ScrewJoint>(name, *parent_body, X_PJ, *child_body,
-                                std::nullopt, axis, screw_thread_pitch,
-                                damping);
+    index = plant->AddJoint<ScrewJoint>(
+      name, *parent_body, X_PJ, *child_body, std::nullopt, axis,
+      screw_thread_pitch, damping).index();
   } else if (type.compare("universal") == 0) {
     throw_on_custom_joint(true);
     ParseJointDynamics(node, &damping);
-    plant->AddJoint<UniversalJoint>(name, *parent_body, X_PJ,
-                                    *child_body, std::nullopt, damping);
+    index = plant->AddJoint<UniversalJoint>(
+      name, *parent_body, X_PJ, *child_body, std::nullopt, damping).index();
   } else {
     Error(*node, fmt::format("Joint '{}' has unrecognized type: '{}'",
                              name, type));
@@ -599,6 +603,76 @@ void UrdfParser::ParseJoint(
   }
 
   joint_effort_limits->emplace(name, effort);
+
+  XMLElement* mimic_node = node->FirstChildElement("mimic");
+  if (mimic_node) {
+    if (!plant->is_discrete() ||
+        plant->get_discrete_contact_solver() != DiscreteContactSolver::kSap) {
+      Warning(
+          *mimic_node,
+          fmt::format("Joint '{}' specifies a mimic element that will be "
+                      "ignored. Mimic elements are currently only supported by "
+                      "MultibodyPlant with a discrete time step and using "
+                      "DiscreteContactSolver::kSap.",
+                      name));
+    } else {
+      std::string joint_to_mimic;
+      double gear_ratio{1.0};
+      double offset{0.0};
+      if (!ParseStringAttribute(mimic_node, "joint", &joint_to_mimic)) {
+        Error(*mimic_node,
+              fmt::format("Joint '{}' mimic element is missing the "
+                          "required 'joint' attribute.",
+                          name));
+        return;
+      }
+      if (!plant->HasJointNamed(joint_to_mimic, model_instance_)) {
+        Error(*mimic_node,
+              fmt::format("Joint '{}' mimic element specifies joint '{}' which"
+                          " does not exist.",
+                          name, joint_to_mimic));
+        return;
+      }
+      ParseScalarAttribute(mimic_node, "multiplier", &gear_ratio);
+      ParseScalarAttribute(mimic_node, "offset", &offset);
+
+      if (!index) {
+        // This can currently happen if we have a "floating" joint, which does
+        // not produce the actual QuaternionFloatingJoint above.
+        Warning(*mimic_node,
+                fmt::format("Drake only supports the mimic element for "
+                            "single-dof joints. The mimic element in joint "
+                            "'{}' will be ignored.",
+                            name));
+      } else {
+        const Joint<double>& joint0 = plant->get_joint(*index);
+        const Joint<double>& joint1 =
+            plant->GetJointByName(joint_to_mimic, model_instance_);
+        if (joint1.num_velocities() != joint0.num_velocities()) {
+          Error(*mimic_node,
+                fmt::format("Joint '{}' which has {} DOF cannot mimic "
+                            "joint '{}' which has {} DOF.",
+                            name, joint0.num_velocities(), joint_to_mimic,
+                            joint1.num_velocities()));
+          return;
+        }
+        if (joint0.num_velocities() != 1) {
+          // The URDF documentation is ambiguous as to whether multi-dof joints
+          // are supported by the mimic tag. So we only raise a warning, not an
+          // error.
+          Warning(*mimic_node,
+                  fmt::format("Drake only supports the mimic element for "
+                              "single-dof joints. The joint '{}' (with {} "
+                              "dofs) is attempting to mimic joint '{}' (with "
+                              "{} dofs). The mimic element will be ignored.",
+                              name, joint0.num_velocities(), joint_to_mimic,
+                              joint1.num_velocities()));
+        } else {
+          plant->AddCouplerConstraint(joint0, joint1, gear_ratio, offset);
+        }
+      }
+    }
+  }
 }
 
 void UrdfParser::ParseMechanicalReduction(const XMLElement& node) {
@@ -606,7 +680,7 @@ void UrdfParser::ParseMechanicalReduction(const XMLElement& node) {
   if (!child) { return; }
   const char* text = child->GetText();
   if (!text) { return; }
-  std::vector<double> values = ConvertToDoubles(text);
+  std::vector<double> values = ConvertToVector<double>(text);
   if (values.size() == 1 && values[0] == 1) { return; }
   Warning(*child, fmt::format(
               "A '{}' element contains a mechanicalReduction element with a"
@@ -841,9 +915,7 @@ std::optional<ModelInstanceIndex> UrdfParser::Parse() {
     return {};
   }
 
-  model_name = parsing::PrefixName(
-      parent_model_name_.value_or(""), model_name);
-
+  model_name = MakeModelName(model_name, parent_model_name_, w_);
   model_instance_ = w_.plant->AddModelInstance(model_name);
 
   // Parses the model's material elements. Throws an exception if there's a

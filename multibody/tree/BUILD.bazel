@@ -18,12 +18,12 @@ drake_cc_package_library(
     deps = [
         ":articulated_body_inertia",
         ":geometry_spatial_inertia",
-        ":multibody_element",
         ":multibody_tree_caches",
         ":multibody_tree_core",
         ":multibody_tree_indexes",
         ":multibody_tree_topology",
         ":rotational_inertia",
+        ":scoped_name",
         ":spatial_inertia",
         ":string_view_map_key",
         ":unit_inertia",
@@ -79,12 +79,14 @@ drake_cc_library(
 
 drake_cc_library(
     name = "multibody_element",
-    srcs = [],
-    hdrs = [
-        "multibody_element.h",
+    deprecation = "This label is deprecated and will be removed from Drake on 2023-04-01; as a replacement, use //multibody/tree instead.",  # noqa
+    tags = [
+        "exclude_from_libdrake",
+        "exclude_from_package",
+        "manual",
     ],
     deps = [
-        ":multibody_tree_topology",
+        ":multibody_tree_core",
     ],
 )
 
@@ -113,6 +115,7 @@ drake_cc_library(
         "linear_spring_damper.cc",
         "mobilizer_impl.cc",
         "model_instance.cc",
+        "multibody_element.cc",
         "multibody_forces.cc",
         "multibody_tree.cc",
         "multibody_tree_system.cc",
@@ -155,6 +158,7 @@ drake_cc_library(
         "mobilizer.h",
         "mobilizer_impl.h",
         "model_instance.h",
+        "multibody_element.h",
         "multibody_forces.h",
         "multibody_tree.h",
         "multibody_tree-inl.h",
@@ -185,9 +189,9 @@ drake_cc_library(
     # "//multibody/tree" broadly, not just ":multibody_tree_core".
     visibility = ["//visibility:private"],
     deps = [
-        ":multibody_element",
         ":multibody_tree_caches",
         ":multibody_tree_indexes",
+        ":scoped_name",
         ":spatial_inertia",
         ":string_view_map_key",
         "//common:default_scalars",
@@ -209,6 +213,17 @@ drake_cc_library(
         "//common:essential",
         "//common:extract_double",
         "//math:geometric_transform",
+    ],
+)
+
+drake_cc_library(
+    name = "scoped_name",
+    srcs = ["scoped_name.cc"],
+    hdrs = ["scoped_name.h"],
+    deps = [
+        ":multibody_tree_indexes",
+        "//common:essential",
+        "//common:reset_after_move",
     ],
 )
 
@@ -300,6 +315,13 @@ drake_cc_googletest(
         "//common/test_utilities:eigen_matrix_compare",
         "//multibody/benchmarks/free_body",
         "//systems/analysis:simulator",
+    ],
+)
+
+drake_cc_googletest(
+    name = "scoped_name_test",
+    deps = [
+        ":scoped_name",
     ],
 )
 
@@ -413,6 +435,7 @@ drake_cc_googletest(
     deps = [
         ":unit_inertia",
         "//common/test_utilities:eigen_matrix_compare",
+        "//common/test_utilities:expect_throws_message",
         "//math:geometric_transform",
         "//math:gradient",
     ],

@@ -422,8 +422,6 @@ class TestSymbolicExpression(unittest.TestCase):
         unittest.TestCase.setUp(self)
         # For some reason, something in how `unittest` tries to scope warnings
         # causes the previous filters to be lost. Re-install here.
-        # TODO(eric.cousineau): This used to be necessary for PY3-only, but
-        # with NumPy 1.16, it became PY2 too. Figure out why.
         install_numpy_warning_filters(force=True)
 
     def test_constructor(self):
@@ -565,6 +563,39 @@ class TestSymbolicExpression(unittest.TestCase):
         self.assertIsInstance(xv[0], sym.Variable)
         self.assertEqual(e_xv.shape, (2,))
         self.assertIsInstance(e_xv[0], sym.Expression)
+
+    def make_matrix_variable(self, rows, cols):
+        M = np.zeros((rows, cols), dtype=object)
+        for i in range(rows):
+            for j in range(cols):
+                M[i, j] = sym.Variable(f"m{i}{j}")
+        return M
+
+    def check_matrix_inversion(self, N):
+        Mvar = self.make_matrix_variable(N, N)
+        subst = {}
+        for i in range(N * N):
+            subst[Mvar.flat[i]] = i ** (N - 1)
+        to_expr = np.vectorize(sym.Expression)
+        M = to_expr(Mvar)
+        Minv = drake_math.inv(M)
+        np.testing.assert_allclose(
+            sym.Evaluate(Minv, subst),
+            np.linalg.inv(sym.Evaluate(M, subst)),
+            rtol=0,
+            atol=1e-10,
+        )
+
+    def test_matrix_inversion(self):
+        self.check_matrix_inversion(1)
+        self.check_matrix_inversion(2)
+        self.check_matrix_inversion(3)
+        self.check_matrix_inversion(4)
+        with self.assertRaises(RuntimeError) as cm:
+            self.check_matrix_inversion(5)
+        self.assertIn(
+            "does not have an entry for the variable", str(cm.exception)
+        )
 
     def test_vectorized_binary_operator_type_combinatorics(self):
         """
@@ -1305,6 +1336,45 @@ class TestSymbolicPolynomial(unittest.TestCase):
         self.assertTrue(
             p_expand.monomial_to_coefficient_map()[
                 sym.Monomial(x)].EqualTo(a+2))
+
+    def test_substitute_and_exand(self):
+        a = sym.Variable("a")
+        x = sym.Variable("x")
+
+        x_sub = sym.Polynomial(a**2 - 1)
+
+        p = sym.Polynomial({
+            sym.Monomial(): 1,
+            sym.Monomial({x: 2}): 1})
+
+        indeterminates_sub = {x: x_sub}
+        cached_data = sym.SubstituteAndExpandCacheData()
+
+        p_sub1 = p.SubstituteAndExpand(
+            indeterminate_substitution=indeterminates_sub)
+        p_sub2 = p.SubstituteAndExpand(
+            indeterminate_substitution=indeterminates_sub,
+            substitutions_cached_data=cached_data)
+        # Check that the data in cached_data grew
+        # (i.e. was modified by SubstituteAndExpand)
+        len_data = len(cached_data.get_data())
+        self.assertTrue(len_data > 1)
+        p_sub3 = p.SubstituteAndExpand(
+            indeterminate_substitution=indeterminates_sub,
+            substitutions_cached_data=cached_data)
+        # Check that the data in cached_data did not grow since we should
+        # already have the expansion saved.
+        self.assertEqual(len(cached_data.get_data()), len_data)
+
+        p_expected = sym.Polynomial({
+            sym.Monomial(): 2,
+            sym.Monomial({a: 2}): -2,
+            sym.Monomial({a: 4}): 1,
+        })
+
+        self.assertTrue(p_expected.EqualTo(p_sub1))
+        self.assertTrue(p_expected.EqualTo(p_sub2))
+        self.assertTrue(p_expected.EqualTo(p_sub3))
 
     def test_remove_terms_with_small_coefficients(self):
         e = 3 * x + 1e-12 * y
@@ -2298,10 +2368,6 @@ class TestStereographicSubstitution(unittest.TestCase):
             sym.Polynomial((1+ty*ty)*(1+tx*tx)).Expand()))
 
         e = 2 * np.sin(x) + np.sin(y) * np.cos(x)
-        # The following method is deprecated, to be removed on or after
-        # 2023-02-01.
-        with catch_drake_warnings(expected_count=1):
-            r = sym.SubstituteStereographicProjection(e=e, subs={x: tx, y: ty})
         self.assertTrue(r.numerator().Expand().EqualTo(
             sym.Polynomial(4*tx*(1+ty*ty) + 2*ty * (1-tx*tx)).Expand()))
         self.assertTrue(r.denominator().Expand().EqualTo(

@@ -34,9 +34,9 @@ class ParserInterface {
   // @param model_name
   //   The name given to the newly created instance of this model.  If
   //   empty, the model name found within the model data will be used.
-  // @param parent_model_name
-  //   Optional name of parent model. If set, this will be prefixed onto the
-  //   model name (either `model_name` or from the "name" attribute) using the
+  // @param parent_model_name Optional name of parent model. If set, the model
+  //   name of the parsed model (either `model_name` or from the "name"
+  //   attribute) will be prefixed with the parent_model_name, using the
   //   SDFormat scope delimiter "::". The prefixed name will used as the name
   //   given to the newly created instance of this model.
   // @param workspace
@@ -56,11 +56,10 @@ class ParserInterface {
   //
   // @param data_source
   //   The model data to be parsed.
-  // @param parent_model_name
-  //   Optional name of parent model. If set, this will be prefixed onto the
-  //   model name (either `model_name` or from the "name" attribute) using the
-  //   SDFormat scope delimiter "::". The prefixed name will used as the name
-  //   given to the newly created instance of this model.
+  // @param parent_model_name Optional name of parent model. If set, the model
+  //   names of all parsed models will be prefixed with the parent_model_name,
+  //   using the SDFormat scope delimiter "::". The prefixed name will used as
+  //   the name given to the newly created instances of these models.
   // @param workspace
   //   The ParsingWorkspace.
   // @returns The model instance indices for the newly added models, or an
@@ -93,6 +92,9 @@ using ParserSelector = std::function<ParserInterface&(
     const drake::internal::DiagnosticPolicy& policy,
     const std::string& filename)>;
 
+struct ParsingOptions {
+  bool enable_auto_renaming{false};
+};
 
 // ParsingWorkspace bundles the commonly-needed elements for parsing routines.
 // It owns nothing; all members are references or pointers to objects owned
@@ -107,12 +109,14 @@ struct ParsingWorkspace {
   // All parameters are aliased; they must have a lifetime greater than that of
   // this struct.
   ParsingWorkspace(
+      const ParsingOptions& options_in,
       const PackageMap& package_map_in,
       const drake::internal::DiagnosticPolicy& diagnostic_in,
       MultibodyPlant<double>* plant_in,
       internal::CollisionFilterGroupResolver* collision_resolver_in,
       ParserSelector parser_selector_in)
-      : package_map(package_map_in),
+      : options(options_in),
+        package_map(package_map_in),
         diagnostic(diagnostic_in),
         plant(plant_in),
         collision_resolver(collision_resolver_in),
@@ -122,6 +126,7 @@ struct ParsingWorkspace {
     DRAKE_DEMAND(parser_selector != nullptr);
   }
 
+  const ParsingOptions& options;
   const PackageMap& package_map;
   const drake::internal::DiagnosticPolicy& diagnostic;
   MultibodyPlant<double>* const plant;

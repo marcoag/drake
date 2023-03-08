@@ -8,10 +8,22 @@ load(
     "drake_cc_googletest",
     "drake_cc_library",
 )
+load("//tools/skylark:drake_data.bzl", "models_filegroup")
 load("//tools/install:install_data.bzl", "install_data")
 load(
     "@drake//tools/vector_gen:vector_gen.bzl",
     "drake_cc_vector_gen_library",
+)
+
+models_filegroup(
+    name = "models",
+    visibility = ["//visibility:public"],
+)
+
+install_data(
+    name = "install_data",
+    data = [":models"],
+    visibility = ["//visibility:public"],
 )
 
 drake_cc_library(
@@ -70,7 +82,6 @@ drake_cc_library(
     ],
     visibility = ["//visibility:public"],
     deps = [
-        "//common:find_resource",
         "//examples/planar_gripper:planar_gripper_common",
         "//geometry:drake_visualizer",
         "//multibody/parsing",
@@ -90,7 +101,6 @@ drake_cc_binary(
     deps = [
         ":planar_gripper_common",
         ":planar_gripper_lcm",
-        "//common:find_resource",
         "//lcm",
         "//multibody/parsing",
         "//systems/analysis:simulator",
@@ -116,7 +126,6 @@ drake_cc_binary(
     deps = [
         ":planar_gripper_common",
         ":planar_gripper_lcm",
-        "//common:find_resource",
         "//geometry:drake_visualizer",
         "//multibody/parsing",
         "//multibody/plant",
@@ -189,13 +198,10 @@ drake_cc_googletest(
     ],
     deps = [
         ":planar_gripper_common",
-        "//common:find_resource",
         "//common/test_utilities:eigen_matrix_compare",
         "//multibody/parsing",
         "//multibody/plant",
     ],
 )
-
-install_data()
 
 add_lint_tests()

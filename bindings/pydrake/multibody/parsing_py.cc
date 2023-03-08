@@ -70,9 +70,14 @@ PYBIND11_MODULE(parsing, m) {
     constexpr auto& cls_doc = doc.Parser;
     auto cls = py::class_<Class>(m, "Parser", cls_doc.doc);
     cls  // BR
-        .def(py::init<MultibodyPlant<double>*, SceneGraph<double>*>(),
+        .def(py::init<MultibodyPlant<double>*, SceneGraph<double>*,
+                 std::string_view>(),
             py::arg("plant"), py::arg("scene_graph") = nullptr,
-            cls_doc.ctor.doc)
+            py::arg("model_name_prefix") = "",
+            cls_doc.ctor.doc_3args_plant_scene_graph_model_name_prefix)
+        .def(py::init<MultibodyPlant<double>*, std::string_view>(),
+            py::arg("plant"), py::arg("model_name_prefix"),
+            cls_doc.ctor.doc_2args_plant_model_name_prefix)
         .def("plant", &Class::plant, py_rvp::reference_internal,
             cls_doc.plant.doc)
         .def("package_map", &Class::package_map, py_rvp::reference_internal,
@@ -89,13 +94,26 @@ PYBIND11_MODULE(parsing, m) {
               return self.AddModels(file_name);
             },
             py::arg("file_name"), cls_doc.AddModels.doc)
+        .def("AddModelsFromUrl", &Class::AddModelsFromUrl, py::arg("url"),
+            cls_doc.AddModelsFromUrl.doc)
         .def("AddModelsFromString", &Class::AddModelsFromString,
+            py::arg("file_contents"), py::arg("file_type"),
+            cls_doc.AddModelsFromString.doc)
+        // Overload AddModels(url=) for some sugar.
+        .def("AddModels", &Class::AddModelsFromUrl, py::kw_only(),
+            py::arg("url"), cls_doc.AddModelsFromUrl.doc)
+        // Overload AddModels(file_contents=, file_type=) for some sugar.
+        .def("AddModels", &Class::AddModelsFromString, py::kw_only(),
             py::arg("file_contents"), py::arg("file_type"),
             cls_doc.AddModelsFromString.doc)
         .def("AddModelFromFile", &Class::AddModelFromFile, py::arg("file_name"),
             py::arg("model_name") = "", cls_doc.AddModelFromFile.doc)
         .def("SetStrictParsing", &Class::SetStrictParsing,
-            cls_doc.SetStrictParsing.doc);
+            cls_doc.SetStrictParsing.doc)
+        .def("SetAutoRenaming", &Class::SetAutoRenaming, py::arg("value"),
+            cls_doc.SetAutoRenaming.doc)
+        .def("GetAutoRenaming", &Class::GetAutoRenaming,
+            cls_doc.GetAutoRenaming.doc);
 
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
@@ -237,8 +255,14 @@ PYBIND11_MODULE(parsing, m) {
       py::keep_alive<0, 1>(),  // `return` keeps `plant` alive.
       doc.parsing.GetScopedFrameByName.doc);
 
-  m.def("GetScopedFrameName", &parsing::GetScopedFrameName, py::arg("plant"),
-      py::arg("frame"), doc.parsing.GetScopedFrameName.doc);
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+  m.def("GetScopedFrameName",
+      WrapDeprecated(doc.parsing.GetScopedFrameName.doc_deprecated,
+          &parsing::GetScopedFrameName),
+      py::arg("plant"), py::arg("frame"),
+      doc.parsing.GetScopedFrameName.doc_deprecated);
+#pragma GCC diagnostic push
 }
 
 }  // namespace pydrake

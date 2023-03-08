@@ -27,17 +27,14 @@ namespace multibody {
 class MultibodyElementTester {
  public:
   MultibodyElementTester() = delete;
-  template <template <typename> class ElementType, typename T,
-      typename ElementIndexType>
-  static bool has_parent_tree(
-      const MultibodyElement<ElementType, T, ElementIndexType>& element) {
+  template <typename T>
+  static bool has_parent_tree(const MultibodyElement<T>& element) {
     return element.has_parent_tree();
   }
 
-  template <template <typename> class ElementType, typename T,
-      typename ElementIndexType>
+  template <typename T>
   static const internal::MultibodyTree<T>& get_parent_tree(
-      const MultibodyElement<ElementType, T, ElementIndexType>& element) {
+      const MultibodyElement<T>& element) {
     return element.get_parent_tree();
   }
 };
@@ -81,6 +78,10 @@ GTEST_TEST(MultibodyTree, BasicAPIToAddBodiesAndMobilizers) {
   // Adds a new body to the world.
   const RigidBody<double>& pendulum = model->AddBody<RigidBody>(
       "pendulum", M_Bo_B);
+  EXPECT_EQ(pendulum.scoped_name().get_full(),
+            "DefaultModelInstance::pendulum");
+  EXPECT_EQ(pendulum.body_frame().scoped_name().get_full(),
+            "DefaultModelInstance::pendulum");
 
   // Adds a revolute mobilizer.
   DRAKE_EXPECT_NO_THROW((model->AddMobilizer<RevoluteMobilizer>(
